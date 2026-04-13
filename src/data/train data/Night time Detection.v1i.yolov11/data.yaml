@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 2
+names: ['Car', 'Motorcycle']
+
+roboflow:
+  workspace: comvis-fb200
+  project: night-time-detection
+  version: 1
+  license: MIT
+  url: https://universe.roboflow.com/comvis-fb200/night-time-detection/dataset/1

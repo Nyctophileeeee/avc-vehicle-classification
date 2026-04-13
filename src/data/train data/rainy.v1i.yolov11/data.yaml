@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 8
+names: ['biker', 'car', 'pedestrian', 'trafficLight', 'trafficLight-Green', 'trafficLight-Red', 'trafficLight-Yellow', 'truck']
+
+roboflow:
+  workspace: car-5nkvd
+  project: rainy-4pkiz
+  version: 1
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/car-5nkvd/rainy-4pkiz/dataset/1

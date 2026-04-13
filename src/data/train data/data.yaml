@@ -1,0 +1,10 @@
+path: C:/Users/ayush/Documents/GitHub/avc-vehicle-classification/src/data/train data
+train: images/train
+val: images/val
+test: images/test
+
+nc: 3
+names:
+  0: car
+  1: bus
+  2: truck

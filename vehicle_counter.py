@@ -1,107 +1,102 @@
 import cv2
-from ultralytics import YOLO
 import csv
-from datetime import datetime
+import time
+from pathlib import Path
+from ultralytics import YOLO
+from collections import defaultdict
 
-# Load model
-model = YOLO("yolo11n.pt")
+# === CONFIG ===
+MODEL_PATH = r'C:\Users\ayush\Documents\GitHub\avc-vehicle-classification\runs\detect\runs\train\avc_model_v15\weights\best.pt'
+VIDEO_PATH = r'C:\Users\ayush\Documents\GitHub\avc-vehicle-classification\traffic.mp4'
+OUTPUT_CSV = r'C:\Users\ayush\Documents\GitHub\avc-vehicle-classification\vehicle_log.csv'
+COUNT_LINE_Y = 400  # horizontal line position for counting
 
-# Load plate detector
-plate_cascade = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_russian_plate_number.xml"
-)
+# === LOAD MODEL ===
+model = YOLO(MODEL_PATH)
+CLASS_NAMES = {0: 'car', 1: 'bus', 2: 'truck'}
 
-cap = cv2.VideoCapture("src/traffic.mp4")
-
-counts = {"car": 0, "bus": 0, "truck": 0}
+# === TRACKING STATE ===
 counted_ids = set()
-class_names = {2: "car", 5: "bus", 7: "truck"}
-class_colours = {
-    "car":   (0, 255, 100),
-    "bus":   (0, 180, 255),
-    "truck": (255, 80, 80),
-}
-LINE_Y = 300
+counts = defaultdict(int)
+track_history = defaultdict(list)
 
-with open("vehicle_log.csv", "w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerow(["timestamp", "vehicle_id", "class",
-                     "total_cars", "total_buses", "total_trucks"])
+# === CSV SETUP ===
+csv_file = open(OUTPUT_CSV, 'w', newline='')
+writer = csv.writer(csv_file)
+writer.writerow(['timestamp', 'track_id', 'class', 'confidence', 'x', 'y'])
 
-def blur_plates(frame):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    plates = plate_cascade.detectMultiScale(gray, 1.1, 4, minSize=(60, 20))
-    for (x, y, w, h) in plates:
-        frame[y:y+h, x:x+w] = cv2.GaussianBlur(frame[y:y+h, x:x+w], (51, 51), 0)
-        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), 2)
-        cv2.putText(frame, "PLATE BLURRED", (x, y-5),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
-    return frame, len(plates)
+# === VIDEO ===
+cap = cv2.VideoCapture(VIDEO_PATH)
+fps = cap.get(cv2.CAP_PROP_FPS)
+print(f"Video FPS: {fps}")
+print(f"Model loaded: {MODEL_PATH}")
+print("Processing... Press Q to quit")
 
-print("Starting AVC System with YOLO11... Press Q to quit")
+frame_count = 0
 
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
-        print("Video finished!")
         break
 
-    frame, plates_blurred = blur_plates(frame)
+    frame_count += 1
+    results = model.track(frame, persist=True, conf=0.3, iou=0.5, verbose=False)
 
-    results = model.track(
-        frame, persist=True,
-        classes=[2, 5, 7], conf=0.4, verbose=False
-    )
+    if results[0].boxes is not None and results[0].boxes.id is not None:
+        boxes = results[0].boxes.xyxy.cpu().numpy()
+        track_ids = results[0].boxes.id.cpu().numpy().astype(int)
+        classes = results[0].boxes.cls.cpu().numpy().astype(int)
+        confs = results[0].boxes.conf.cpu().numpy()
 
-    cv2.line(frame, (0, LINE_Y), (frame.shape[1], LINE_Y), (0, 255, 255), 2)
-    cv2.putText(frame, "COUNTING LINE", (10, LINE_Y - 8),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+        for box, track_id, cls, conf in zip(boxes, track_ids, classes, confs):
+            x1, y1, x2, y2 = box
+            cx = int((x1 + x2) / 2)
+            cy = int((y1 + y2) / 2)
+            class_name = CLASS_NAMES.get(cls, 'unknown')
 
-    if results[0].boxes.id is not None:
-        boxes = results[0].boxes
-        for box, cls, track_id in zip(boxes.xyxy, boxes.cls, boxes.id):
-            x1, y1, x2, y2 = map(int, box)
-            obj_id = int(track_id)
-            class_name = class_names.get(int(cls), None)
-            if class_name is None:
-                continue
-            cx = (x1 + x2) // 2
-            cy = (y1 + y2) // 2
-            colour = class_colours[class_name]
-            cv2.rectangle(frame, (x1, y1), (x2, y2), colour, 2)
-            cv2.circle(frame, (cx, cy), 4, colour, -1)
-            cv2.putText(frame, f"{class_name} #{obj_id}", (x1, y1-8),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, 2)
-            if cy > LINE_Y and obj_id not in counted_ids:
-                counts[class_name] += 1
-                counted_ids.add(obj_id)
-                print(f"✅ {class_name.upper()} counted! "
-                      f"Cars:{counts['car']} Buses:{counts['bus']} Trucks:{counts['truck']}")
-                with open("vehicle_log.csv", "a", newline="") as f:
-                    writer = csv.writer(f)
-                    writer.writerow([datetime.now().strftime("%H:%M:%S"),
-                                     obj_id, class_name,
-                                     counts["car"], counts["bus"], counts["truck"]])
+            # Draw box
+            color = (0, 255, 170) if cls == 0 else (0, 165, 255) if cls == 1 else (255, 100, 0)
+            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+            cv2.putText(frame, f'{class_name} #{track_id} {conf:.2f}',
+                       (int(x1), int(y1)-8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-    cv2.putText(frame, "AVC System - Bradford Council | YOLO11", (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-    cv2.putText(frame, f"Privacy Active | Plates blurred: {plates_blurred}", (10, 55),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
+            # Count when crossing line
+            if track_id not in counted_ids:
+                track_history[track_id].append(cy)
+                if len(track_history[track_id]) >= 2:
+                    prev_y = track_history[track_id][-2]
+                    if prev_y < COUNT_LINE_Y <= cy or cy < COUNT_LINE_Y <= prev_y:
+                        counted_ids.add(track_id)
+                        counts[class_name] += 1
+                        timestamp = time.strftime('%H:%M:%S')
+                        writer.writerow([timestamp, track_id, class_name, f'{conf:.2f}', cx, cy])
+                        csv_file.flush()
 
-    y_pos = 90
-    for name, count in counts.items():
-        cv2.putText(frame, f"{name.upper()}: {count}", (10, y_pos),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, class_colours[name], 2)
-        y_pos += 35
+    # Draw count line
+    cv2.line(frame, (0, COUNT_LINE_Y), (frame.shape[1], COUNT_LINE_Y), (0, 255, 255), 2)
+    cv2.putText(frame, 'COUNT LINE', (10, COUNT_LINE_Y - 8),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
 
-    cv2.imshow("AVC System - Bradford Council", frame)
-    if cv2.waitKey(1) & 0xFF == ord("q"):
+    # Draw counts
+    y_pos = 30
+    cv2.putText(frame, f"Cars: {counts['car']}", (10, y_pos),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 170), 2)
+    cv2.putText(frame, f"Buses: {counts['bus']}", (10, y_pos+30),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
+    cv2.putText(frame, f"Trucks: {counts['truck']}", (10, y_pos+60),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 100, 0), 2)
+    cv2.putText(frame, f"Total: {sum(counts.values())}", (10, y_pos+90),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+
+    cv2.imshow('AVC&C - Vehicle Counter', frame)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
 cap.release()
+csv_file.close()
 cv2.destroyAllWindows()
-print("\n" + "="*40)
-print(f"Cars: {counts['car']} | Buses: {counts['bus']} | Trucks: {counts['truck']}")
-print(f"TOTAL: {sum(counts.values())}")
-print("YOLO11 + Privacy blur complete!")
-print("="*40)
+
+print(f"\nFinal counts:")
+for k, v in counts.items():
+    print(f"  {k}: {v}")
+print(f"CSV saved to: {OUTPUT_CSV}")
