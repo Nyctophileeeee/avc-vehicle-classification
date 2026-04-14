@@ -1,21 +1,32 @@
 import cv2
 import csv
 import time
-from pathlib import Path
 from ultralytics import YOLO
 from collections import defaultdict
 
 # === CONFIG ===
 MODEL_PATH = r'C:\Users\ayush\Documents\GitHub\avc-vehicle-classification\runs\detect\runs\train\avc_model_v15\weights\best.pt'
-VIDEO_PATH = r'C:\Users\ayush\Documents\GitHub\avc-vehicle-classification\traffic.mp4'
 OUTPUT_CSV = r'C:\Users\ayush\Documents\GitHub\avc-vehicle-classification\vehicle_log.csv'
-COUNT_LINE_Y = 400  # horizontal line position for counting
+COUNT_LINE_Y = 400
+
+# === CAMERA SOURCE ===
+# Option 1: Phone via DroidCam WiFi (replace IP with your DroidCam IP)
+# VIDEO_PATH = "http://192.168.1.5:4747/video"
+
+# Option 2: Phone via USB DroidCam
+# VIDEO_PATH = 1
+
+# Option 3: Laptop webcam (default)
+VIDEO_PATH = 0
+
+# Option 4: Traffic video file
+# VIDEO_PATH = r'C:\Users\ayush\Documents\GitHub\avc-vehicle-classification\traffic.mp4'
 
 # === LOAD MODEL ===
 model = YOLO(MODEL_PATH)
 CLASS_NAMES = {0: 'car', 1: 'bus', 2: 'truck'}
 
-# === TRACKING STATE ===
+# === STATE ===
 counted_ids = set()
 counts = defaultdict(int)
 track_history = defaultdict(list)
@@ -23,30 +34,45 @@ track_history = defaultdict(list)
 # === CSV SETUP ===
 csv_file = open(OUTPUT_CSV, 'w', newline='')
 writer = csv.writer(csv_file)
-writer.writerow(['timestamp', 'track_id', 'class', 'confidence', 'x', 'y'])
+writer.writerow(['timestamp', 'track_id', 'class', 'confidence', 'x', 'y', 'weather'])
+WEATHER = "Normal"  # change this at exhibition if needed
+
+print("="*50)
+print("AVC&C — Vehicle Counter")
+print(f"Model: {MODEL_PATH}")
+print(f"Source: {VIDEO_PATH}")
+print("Press Q to quit | Press W to cycle weather")
+print("="*50)
 
 # === VIDEO ===
 cap = cv2.VideoCapture(VIDEO_PATH)
-fps = cap.get(cv2.CAP_PROP_FPS)
-print(f"Video FPS: {fps}")
-print(f"Model loaded: {MODEL_PATH}")
-print("Processing... Press Q to quit")
 
-frame_count = 0
+if not cap.isOpened():
+    print("ERROR: Cannot open camera/video source!")
+    print("If using DroidCam, make sure:")
+    print("  1. Phone and laptop on same WiFi")
+    print("  2. DroidCam app is open on phone")
+    print("  3. Correct IP in VIDEO_PATH")
+    exit()
+
+print(f"Camera opened! FPS: {cap.get(cv2.CAP_PROP_FPS)}")
+
+WEATHER_OPTIONS = ["Normal", "Rain", "Fog", "Snow", "Sand"]
+weather_idx = 0
 
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
+        print("No frame received — check camera connection")
         break
 
-    frame_count += 1
     results = model.track(frame, persist=True, conf=0.3, iou=0.5, verbose=False)
 
     if results[0].boxes is not None and results[0].boxes.id is not None:
-        boxes = results[0].boxes.xyxy.cpu().numpy()
+        boxes    = results[0].boxes.xyxy.cpu().numpy()
         track_ids = results[0].boxes.id.cpu().numpy().astype(int)
-        classes = results[0].boxes.cls.cpu().numpy().astype(int)
-        confs = results[0].boxes.conf.cpu().numpy()
+        classes  = results[0].boxes.cls.cpu().numpy().astype(int)
+        confs    = results[0].boxes.conf.cpu().numpy()
 
         for box, track_id, cls, conf in zip(boxes, track_ids, classes, confs):
             x1, y1, x2, y2 = box
@@ -54,9 +80,11 @@ while cap.isOpened():
             cy = int((y1 + y2) / 2)
             class_name = CLASS_NAMES.get(cls, 'unknown')
 
-            # Draw box
-            color = (0, 255, 170) if cls == 0 else (0, 165, 255) if cls == 1 else (255, 100, 0)
-            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
+            # Colour per class
+            color = (0,255,170) if cls==0 else (0,165,255) if cls==1 else (255,100,0)
+
+            # Draw bounding box
+            cv2.rectangle(frame, (int(x1),int(y1)), (int(x2),int(y2)), color, 2)
             cv2.putText(frame, f'{class_name} #{track_id} {conf:.2f}',
                        (int(x1), int(y1)-8), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
@@ -69,34 +97,41 @@ while cap.isOpened():
                         counted_ids.add(track_id)
                         counts[class_name] += 1
                         timestamp = time.strftime('%H:%M:%S')
-                        writer.writerow([timestamp, track_id, class_name, f'{conf:.2f}', cx, cy])
+                        writer.writerow([timestamp, track_id, class_name,
+                                        f'{conf:.2f}', cx, cy, WEATHER])
                         csv_file.flush()
+                        print(f"  Counted: {class_name} #{track_id} | Total: {dict(counts)}")
 
     # Draw count line
-    cv2.line(frame, (0, COUNT_LINE_Y), (frame.shape[1], COUNT_LINE_Y), (0, 255, 255), 2)
-    cv2.putText(frame, 'COUNT LINE', (10, COUNT_LINE_Y - 8),
-               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+    h, w = frame.shape[:2]
+    cv2.line(frame, (0, COUNT_LINE_Y), (w, COUNT_LINE_Y), (0,255,255), 2)
+    cv2.putText(frame, 'COUNT LINE', (10, COUNT_LINE_Y-8),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0,255,255), 1)
 
-    # Draw counts
-    y_pos = 30
-    cv2.putText(frame, f"Cars: {counts['car']}", (10, y_pos),
-               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 170), 2)
-    cv2.putText(frame, f"Buses: {counts['bus']}", (10, y_pos+30),
-               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 165, 255), 2)
-    cv2.putText(frame, f"Trucks: {counts['truck']}", (10, y_pos+60),
-               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 100, 0), 2)
-    cv2.putText(frame, f"Total: {sum(counts.values())}", (10, y_pos+90),
-               cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+    # Draw live counts on screen
+    cv2.rectangle(frame, (0,0), (200,130), (0,0,0), -1)
+    cv2.putText(frame, f"Cars:   {counts['car']}",   (10,30),  cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,255,170), 2)
+    cv2.putText(frame, f"Buses:  {counts['bus']}",   (10,60),  cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0,165,255), 2)
+    cv2.putText(frame, f"Trucks: {counts['truck']}", (10,90),  cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,100,0), 2)
+    cv2.putText(frame, f"Total:  {sum(counts.values())}", (10,120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
 
-    cv2.imshow('AVC&C - Vehicle Counter', frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
+    # Weather label
+    cv2.putText(frame, f"Weather: {WEATHER}", (w-200, 25),
+               cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255,255,100), 2)
+
+    cv2.imshow('AVC&C - Live Vehicle Counter | Press Q to quit', frame)
+
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord('q'):
         break
+    elif key == ord('w'):
+        weather_idx = (weather_idx + 1) % len(WEATHER_OPTIONS)
+        WEATHER = WEATHER_OPTIONS[weather_idx]
+        print(f"Weather changed to: {WEATHER}")
 
 cap.release()
 csv_file.close()
 cv2.destroyAllWindows()
 
-print(f"\nFinal counts:")
-for k, v in counts.items():
-    print(f"  {k}: {v}")
+print(f"\nFinal counts: {dict(counts)}")
 print(f"CSV saved to: {OUTPUT_CSV}")
