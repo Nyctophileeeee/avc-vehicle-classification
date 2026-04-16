@@ -6,51 +6,63 @@ from pathlib import Path
 random.seed(42)
 
 BASE = Path("C:/Users/ayush/Documents/GitHub/avc-vehicle-classification/src/data/train data")
-OUT = BASE
 
+OUT = BASE
 for split in ["train", "val", "test"]:
     (OUT / "images" / split).mkdir(parents=True, exist_ok=True)
     (OUT / "labels" / split).mkdir(parents=True, exist_ok=True)
 
+# === ALL DATA SOURCES ===
+SOURCES = [
+    # Original weather data
+    BASE / "Fog" / "Fog",
+    BASE / "Rain" / "Rain",
+    BASE / "Sand (1)" / "Sand",
+    BASE / "Snow (1)" / "Snow",
+    BASE / "normal condition day plus night",
+    # New datasets
+    BASE / "Night time Detection.v1i.yolov11" / "train",
+    BASE / "Night time Detection.v1i.yolov11" / "valid",
+    BASE / "rainy.v1i.yolov11" / "train",
+    BASE / "rainy.v1i.yolov11" / "valid",
+    BASE / "Traffic Lights 3.v2i.yolov11" / "train",
+    BASE / "Traffic Lights 3.v2i.yolov11" / "valid",
+]
+
 all_pairs = []
 
-for dataset_folder in BASE.iterdir():
-    if not dataset_folder.is_dir():
-        continue
-    if dataset_folder.name in ["images", "labels"]:
+for source in SOURCES:
+    if not source.exists():
+        print(f"SKIPPING (not found): {source}")
         continue
 
-    # Try YOLO_darknet structure first
-    yolo_dir = None
-    for sub in dataset_folder.iterdir():
+    img_dir = source / "images" if (source / "images").exists() else source
+    lbl_dir = source / "labels" if (source / "labels").exists() else None
+
+    # Also check for YOLO_darknet subfolder
+    for sub in source.iterdir() if source.is_dir() else []:
         if "YOLO_darknet" in sub.name:
-            yolo_dir = sub
+            lbl_dir = sub
             break
 
-    if yolo_dir:
-        imgs = list((yolo_dir).glob("*.jpg")) + list((yolo_dir).glob("*.png"))
-        for img in imgs:
-            lbl = yolo_dir / (img.stem + ".txt")
-            all_pairs.append((img, lbl))
-        print(f"{dataset_folder.name}: {len(imgs)} images (YOLO darknet)")
+    count = 0
+    for ext in ["*.jpg", "*.jpeg", "*.png", "*.bmp"]:
+        for img in img_dir.glob(ext):
+            if lbl_dir:
+                label = lbl_dir / (img.stem + ".txt")
+            else:
+                label = img.with_suffix(".txt")
+            all_pairs.append((img, label))
+            count += 1
 
-    else:
-        # Try train/valid/test structure
-        for split_name in ["train", "valid", "val"]:
-            split_dir = dataset_folder / split_name / "images"
-            label_dir = dataset_folder / split_name / "labels"
-            if split_dir.exists():
-                imgs = list(split_dir.glob("*.jpg")) + list(split_dir.glob("*.png"))
-                for img in imgs:
-                    lbl = label_dir / (img.stem + ".txt")
-                    all_pairs.append((img, lbl))
-                print(f"{dataset_folder.name}/{split_name}: {len(imgs)} images")
+    print(f"Found {count} images in: {source.name}")
 
-print(f"\nTotal images found: {len(all_pairs)}")
+print(f"\nTotal images: {len(all_pairs)}")
 
 random.shuffle(all_pairs)
-train_end = int(0.7 * len(all_pairs))
-val_end = int(0.85 * len(all_pairs))
+n = len(all_pairs)
+train_end = int(n * 0.7)
+val_end   = int(n * 0.9)
 
 splits = {
     "train": all_pairs[:train_end],
@@ -63,6 +75,6 @@ for split, pairs in splits.items():
         shutil.copy2(img_path, OUT / "images" / split / img_path.name)
         if label_path.exists():
             shutil.copy2(label_path, OUT / "labels" / split / label_path.name)
-    print(f"{split}: {len(pairs)} images copied")
+    print(f"{split}: {len(pairs)} images")
 
-print("\nDone! Dataset ready for training.")
+print("\nDone! Ready to train.")
