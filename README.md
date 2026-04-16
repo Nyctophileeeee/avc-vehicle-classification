@@ -127,22 +127,30 @@ Simply double-click `start_demo.bat` — opens both the counter and dashboard au
 
 ## 📊 Dataset
 
-The model was trained on **8,025 images** across 5 weather conditions:
+The model was trained on a comprehensive dataset of **11,582 images** across 5 weather conditions:
 
-| Condition | Images |
-|-----------|--------|
-| Normal (Day + Night) | ~1,500 |
-| Rain | ~1,800 |
-| Fog | ~1,200 |
-| Snow | ~1,800 |
-| Sand | ~1,725 |
+| Split | Images |
+|-------|--------|
+| Training (70%) | 7,337 |
+| Validation (20%) | 2,532 |
+| Test (10%) | 1,713 |
+| **Total** | **11,582** |
 
-- **Train / Val / Test split:** 70% / 20% / 10%
+**Weather conditions covered:**
+
+| Condition | Images (approx) |
+|-----------|----------------|
+| Normal (Day + Night) | ~2,100 |
+| Rain | ~2,800 |
+| Fog | ~2,200 |
+| Snow | ~2,400 |
+| Sand | ~2,082 |
+
+- **Original raw dataset:** ~14,000+ images collected
+- **After duplicate removal & cleaning:** 11,582 quality images retained
 - **Classes:** Car, Bus, Truck
 - **Format:** YOLO darknet annotation format
 - **Sources:** Roboflow annotated datasets + custom weather-condition datasets
-
----
 
 ## 🎥 Demo Setup
 
