@@ -8,7 +8,7 @@ from collections import defaultdict
 MODEL_PATH = r'C:\Users\ayush\Documents\GitHub\avc-vehicle-classification\yolo11n.pt'
 OUTPUT_CSV = r'C:\Users\ayush\Documents\GitHub\avc-vehicle-classification\vehicle_log.csv'
 COUNT_LINE_Y = 300
-VIDEO_PATH = r'C:\Users\ayush\Documents\GitHub\avc-vehicle-classification\traffic.mp4'
+VIDEO_PATH = 2  # DroidCam virtual camera — try 1, 2, or 3 if this doesn't work
 
 # === LOAD MODEL ===
 model = YOLO(MODEL_PATH)
@@ -36,11 +36,18 @@ print("="*50)
 cap = cv2.VideoCapture(VIDEO_PATH)
 
 if not cap.isOpened():
-    print("ERROR: Cannot open video!")
-    print("traffic.mp4 not found — switching to webcam")
-    cap = cv2.VideoCapture(0)
+    print(f"ERROR: Cannot open camera {VIDEO_PATH}")
+    print("Trying other camera indices...")
+    for i in [0, 1, 2, 3]:
+        cap = cv2.VideoCapture(i)
+        if cap.isOpened():
+            print(f"Opened camera {i}")
+            break
+    if not cap.isOpened():
+        print("No camera found!")
+        exit()
 
-print(f"Opened! FPS: {cap.get(cv2.CAP_PROP_FPS)}")
+print(f"Camera opened! FPS: {cap.get(cv2.CAP_PROP_FPS)}")
 
 WEATHER_OPTIONS = ["Normal", "Rain", "Fog", "Snow", "Sand"]
 weather_idx = 0
@@ -48,7 +55,7 @@ weather_idx = 0
 while cap.isOpened():
     ret, frame = cap.read()
     if not ret:
-        print("Video ended or no frame")
+        print("No frame received")
         break
 
     results = model.track(frame, persist=True, conf=0.15, iou=0.3,
